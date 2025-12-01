@@ -140,16 +140,17 @@ def generate_jsonl_files(metadata_dir, data_dir, output_dir, verify_files=False)
     print(f"Loaded {len(abc_metadata_list)} ABC entries")
     print(f"Loaded {len(mtf_metadata_list)} MTF entries")
     
-    # Generate ABC JSONL
-    print("\nGenerating ABC training JSONL...")
+    # Generate ABC JSONL - ALWAYS verify ABC files exist to exclude missing ones
+    print("\nGenerating ABC training JSONL (verifying file existence)...")
     abc_jsonl_path = os.path.join(output_dir, 'clamp3_train_abc.jsonl')
     abc_count = 0
     abc_skipped = 0
     
     with open(abc_jsonl_path, 'w', encoding='utf-8') as f:
         for metadata in tqdm(abc_metadata_list, desc="Processing ABC entries"):
+            # ALWAYS verify for ABC to exclude entries without converted files
             entry = convert_metadata_to_jsonl_entry(
-                metadata, 'abc', data_dir, verify_files
+                metadata, 'abc', data_dir, verify_files=True
             )
             if entry:
                 f.write(json.dumps(entry, ensure_ascii=False) + '\n')
