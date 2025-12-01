@@ -22,3 +22,5 @@ abcoutput/
 *.swp
 *.tmp
 
+# Weights
+*.pth
