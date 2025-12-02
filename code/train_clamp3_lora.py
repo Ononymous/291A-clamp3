@@ -20,6 +20,13 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from transformers import AutoTokenizer, BertConfig, get_constant_schedule_with_warmup
 
+# ==================== RESUME TRAINING CONFIGURATION ====================
+# Set these to resume from a checkpoint:
+RESUME_CHECKPOINT = None  # e.g., "code/logs/lora_training/ABC_checkpoint_epoch5.pth"
+RESUME_ADAPTER = None     # e.g., "code/logs/lora_training/ABC_checkpoint_epoch5_adapter"
+START_EPOCH = 1           # Epoch to start from (1-indexed)
+# ======================================================================
+
 
 def list_files_in_json(json_path):
     """Load JSONL training data."""
@@ -300,8 +307,16 @@ def save_checkpoint(checkpoint_path, epoch, loss, adapter_name):
     print(f"\nCheckpoint saved: {checkpoint_path}")
 
 
-def train_adapter(adapter_name, train_jsonl_path, adapter_save_path):
-    """Train a single LoRA adapter."""
+def train_adapter(adapter_name, train_jsonl_path, adapter_save_path, resume_checkpoint=None):
+    """
+    Train a single LoRA adapter.
+    
+    Args:
+        adapter_name: Name of the adapter (e.g., "ABC" or "MTF")
+        train_jsonl_path: Path to training data JSONL
+        adapter_save_path: Path to save the best adapter
+        resume_checkpoint: Path to checkpoint file to resume from (optional)
+    """
     global train_set, eval_set, optimizer, lr_scheduler, scaler
     
     print("\n" + "="*80)
@@ -346,18 +361,85 @@ def train_adapter(adapter_name, train_jsonl_path, adapter_save_path):
     lr_scheduler = get_constant_schedule_with_warmup(optimizer=optimizer, num_warmup_steps=1000)
     scaler = GradScaler()
 
-    # Training loop
+    # Resume from checkpoint if specified
+    start_epoch = 1
     best_epoch = 0
     min_eval_loss = float('inf')
     training_history = []
     
-    print(f"\nStarting training for {LORA_NUM_EPOCHS} epochs...")
+    if resume_checkpoint and os.path.exists(resume_checkpoint):
+        print(f"\n{'='*80}")
+        print("RESUMING FROM CHECKPOINT")
+        print(f"{'='*80}")
+        print(f"Loading checkpoint: {resume_checkpoint}")
+        
+        try:
+            checkpoint = torch.load(resume_checkpoint, map_location=device, weights_only=False)
+            
+            # Load adapter weights
+            adapter_path = resume_checkpoint.replace('.pth', '_adapter')
+            if os.path.exists(adapter_path):
+                print(f"Loading adapter weights from: {adapter_path}")
+                if world_size > 1:
+                    model.module.load_adapter(adapter_path)
+                else:
+                    model.load_adapter(adapter_path)
+                print("✓ Adapter weights loaded")
+            else:
+                print(f"⚠ Warning: Adapter path not found: {adapter_path}")
+            
+            # Load optimizer state
+            if 'optimizer_state' in checkpoint:
+                optimizer.load_state_dict(checkpoint['optimizer_state'])
+                print("✓ Optimizer state loaded")
+            
+            # Load scheduler state
+            if 'scheduler_state' in checkpoint:
+                lr_scheduler.load_state_dict(checkpoint['scheduler_state'])
+                print("✓ Scheduler state loaded")
+            
+            # Load scaler state
+            if 'scaler_state' in checkpoint:
+                scaler.load_state_dict(checkpoint['scaler_state'])
+                print("✓ Scaler state loaded")
+            
+            # Set start epoch
+            if 'epoch' in checkpoint:
+                start_epoch = checkpoint['epoch'] + 1
+                print(f"✓ Resuming from epoch {start_epoch}")
+            
+            # Load training history if available
+            history_path = os.path.join(LORA_LOGS_DIR, f'{adapter_name}_history.json')
+            if os.path.exists(history_path):
+                with open(history_path, 'r') as f:
+                    training_history = json.load(f)
+                print(f"✓ Loaded training history ({len(training_history)} epochs)")
+                
+                # Find best epoch so far
+                if training_history:
+                    best_entry = min(training_history, key=lambda x: x.get('eval_loss', float('inf')))
+                    min_eval_loss = best_entry.get('eval_loss', float('inf'))
+                    best_epoch = best_entry.get('epoch', 0)
+                    print(f"✓ Best epoch so far: {best_epoch} (eval_loss: {min_eval_loss:.4f})")
+            
+            print(f"{'='*80}\n")
+            
+        except Exception as e:
+            print(f"⚠ Warning: Failed to load checkpoint: {e}")
+            print("Starting from scratch...\n")
+            start_epoch = 1
+            best_epoch = 0
+            min_eval_loss = float('inf')
+            training_history = []
+    
+    # Training loop
+    print(f"\nStarting training from epoch {start_epoch} to {LORA_NUM_EPOCHS}...")
     print(f"Train batches: {len(train_set)}, Eval batches: {len(eval_set)}")
     print(f"Batch size: {LORA_BATCH_SIZE}, Learning rate: {LORA_LEARNING_RATE}")
     print(f"Saving adapters to: {adapter_save_path}\n")
     
     try:
-        for epoch in range(1, LORA_NUM_EPOCHS + 1):
+        for epoch in range(start_epoch, LORA_NUM_EPOCHS + 1):
             train_sampler.set_epoch(epoch)
             eval_sampler.set_epoch(epoch)
             
@@ -596,8 +678,11 @@ if __name__ == "__main__":
     print("="*80)
     stage1_start = time.time()
     
+    # Check if resume checkpoint is specified in config (for ABC)
+    abc_resume_checkpoint = RESUME_CHECKPOINT if RESUME_CHECKPOINT and 'ABC' in str(RESUME_CHECKPOINT) else None
+    
     try:
-        success = train_adapter("ABC", LORA_ABC_TRAIN_JSONL, LORA_ABC_ADAPTER_PATH)
+        success = train_adapter("ABC", LORA_ABC_TRAIN_JSONL, LORA_ABC_ADAPTER_PATH, resume_checkpoint=abc_resume_checkpoint)
         stage1_time = time.time() - stage1_start
         
         if not success:
@@ -639,8 +724,11 @@ if __name__ == "__main__":
     print("="*80)
     stage2_start = time.time()
     
+    # Check if resume checkpoint is specified in config (for MTF)
+    mtf_resume_checkpoint = RESUME_CHECKPOINT if RESUME_CHECKPOINT and 'MTF' in str(RESUME_CHECKPOINT) else None
+    
     try:
-        success = train_adapter("MTF", LORA_MTF_TRAIN_JSONL, LORA_MTF_ADAPTER_PATH)
+        success = train_adapter("MTF", LORA_MTF_TRAIN_JSONL, LORA_MTF_ADAPTER_PATH, resume_checkpoint=mtf_resume_checkpoint)
         stage2_time = time.time() - stage2_start
         
         if not success:
