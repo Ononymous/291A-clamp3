@@ -2,6 +2,7 @@ import re
 import os
 import math
 import torch
+import torch.nn as nn
 import random
 from config import *
 from unidecode import unidecode
@@ -174,6 +175,12 @@ class M3Patchilizer:
         lines = list(filter(None, lines))  # remove empty lines
 
         patches = []
+        
+        # Handle empty content
+        if len(lines) == 0:
+            if add_special_patches:
+                return [self.bos_token_id, self.eos_token_id]
+            return []
 
         if lines[0].split(" ")[0] == "ticks_per_beat":
             patch = ""
@@ -546,8 +553,15 @@ def mask_patches(target_patches, patchilizer, mode):
     
 def remove_instrument_info(item):
     # remove instrument information from symbolic music
+    if not item or len(item.strip()) == 0:
+        return item  # Return empty string as-is
+    
     lines = re.findall(r'.*?\n|.*$', item)
     lines = list(filter(None, lines))
+    
+    if len(lines) == 0:
+        return item  # Return original if no lines found
+    
     if lines[0].split(" ")[0] == "ticks_per_beat":
         type = "mtf"
     else:
@@ -572,3 +586,79 @@ def remove_instrument_info(item):
         cleaned_lines.append(line)
         
     return ''.join(cleaned_lines)
+
+
+# -------------------- LoRA Adapter Utilities --------------------
+class CLaMP3ModelWithLoRA(nn.Module):
+    """
+    CLaMP3 model with LoRA adapters for symbolic encoder specialization.
+    Wraps the symbolic encoder (M3PatchEncoder) with LoRA for format-specific training.
+    """
+    def __init__(self, base_model, lora_config=None):
+        """
+        Args:
+            base_model: Pre-trained CLaMP3Model instance
+            lora_config: peft LoraConfig object (optional, for initial setup)
+        """
+        super().__init__()
+        self.base_model = base_model
+        self.lora_enabled = False
+        self.current_adapter = None
+        
+        # Apply LoRA to symbolic encoder if config provided
+        if lora_config is not None:
+            from peft import get_peft_model
+            # Apply LoRA only to the symbolic encoder's base (BertModel)
+            self.base_model.symbolic_model.base = get_peft_model(
+                self.base_model.symbolic_model.base, 
+                lora_config
+            )
+            self.lora_enabled = True
+    
+    def forward(self, text_inputs, text_masks, music_inputs, music_masks, modality):
+        """Forward pass through base model."""
+        return self.base_model(text_inputs, text_masks, music_inputs, music_masks, modality)
+    
+    def load_adapter(self, adapter_path, adapter_name="default"):
+        """Load a trained LoRA adapter."""
+        from peft import PeftModel
+        self.base_model.symbolic_model.base = PeftModel.from_pretrained(
+            self.base_model.symbolic_model.base,
+            adapter_path,
+            adapter_name=adapter_name
+        )
+        self.current_adapter = adapter_name
+        self.lora_enabled = True
+        print(f"Loaded LoRA adapter: {adapter_name} from {adapter_path}")
+    
+    def save_adapter(self, save_path):
+        """Save the current LoRA adapter."""
+        if self.lora_enabled:
+            self.base_model.symbolic_model.base.save_pretrained(save_path)
+            print(f"Saved LoRA adapter to {save_path}")
+        else:
+            print("Warning: No LoRA adapter to save")
+    
+    def set_trainable(self, freeze_list):
+        """Set trainable parameters - delegates to base model."""
+        self.base_model.set_trainable(freeze_list)
+        
+        # If LoRA is enabled, ensure base model is frozen and only adapters train
+        if self.lora_enabled:
+            # Freeze all base parameters
+            for param in self.base_model.parameters():
+                param.requires_grad = False
+            
+            # Unfreeze only LoRA parameters
+            for name, param in self.base_model.symbolic_model.base.named_parameters():
+                if 'lora_' in name:
+                    param.requires_grad = True
+            
+            print("LoRA mode: Base model frozen, LoRA adapters trainable")
+
+
+def split_data(data, eval_split=EVAL_SPLIT):
+    """Split data into train and eval sets."""
+    random.shuffle(data)
+    split_idx = int(len(data) * (1 - eval_split))
+    return data[:split_idx], data[split_idx:]

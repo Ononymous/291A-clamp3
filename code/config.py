@@ -1,3 +1,5 @@
+import os
+
 EVAL_SPLIT = 0.01  # Fraction of training data used for evaluation
 WANDB_KEY = "<YOUR_WANDB_KEY>"  # Weights and Biases API key
 
@@ -62,8 +64,9 @@ CLAMP3_WANDB_LOG = True  # Enable logging to Weights and Biases
 CLAMP3_LOAD_CKPT = True  # Load weights from a checkpoint if available
 SAVE_EVERY = 5  # Save model weights every SAVE_EVERY epochs
 
-CLAMP3_WEIGHTS_PATH = (
-    "weights_clamp3_saas" +
+CLAMP3_WEIGHTS_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "weights_clamp3_c2" +
     "_h_size_" + str(CLAMP3_HIDDEN_SIZE) +
     "_t_model_" + TEXT_MODEL_NAME.replace("/", "_") +
     "_t_length_" + str(MAX_TEXT_LENGTH) +
@@ -74,6 +77,30 @@ CLAMP3_WEIGHTS_PATH = (
     "_s_layers_" + str(PATCH_NUM_LAYERS) +
     "_p_size_" + str(PATCH_SIZE) +
     "_p_length_" + str(PATCH_LENGTH) + ".pth"
-
 )  # Path to store CLaMP3 model weights
 CLAMP3_LOGS_PATH = CLAMP3_WEIGHTS_PATH.replace("weights", "logs").replace("pth", "txt")  # Path to save training logs
+
+# -------------------- Configuration for LoRA Adapter Training ----------------
+# LoRA Hyperparameters (recommended settings for transformers)
+LORA_R = 8                    # LoRA rank (low-rank dimension)
+LORA_ALPHA = 16               # LoRA alpha scaling factor (typically 2 * rank)
+LORA_DROPOUT = 0.1            # LoRA dropout for regularization
+LORA_TARGET_MODULES = ["query", "key", "value"]  # Attention projection layers in BertModel
+
+# LoRA Training Configuration
+LORA_LEARNING_RATE = 1e-4     # Higher learning rate for adapter-only training
+LORA_NUM_EPOCHS = 10          # Number of epochs per adapter
+LORA_BATCH_SIZE = 32          # Batch size per GPU (reduced to avoid OOM)
+LORA_EVAL_SPLIT = 0.01        # 1% of data for validation
+
+# LoRA Adapter Paths
+LORA_ABC_ADAPTER_PATH = os.path.join(os.path.dirname(__file__), "adapters", "lora_abc_adapter")
+LORA_MTF_ADAPTER_PATH = os.path.join(os.path.dirname(__file__), "adapters", "lora_mtf_adapter")
+
+# LoRA Training Data Paths (relative to repository root)
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+LORA_ABC_TRAIN_JSONL = os.path.join(REPO_ROOT, "data", "training", "clamp3_train_abc.jsonl")
+LORA_MTF_TRAIN_JSONL = os.path.join(REPO_ROOT, "data", "training", "clamp3_train_mtf.jsonl")
+
+# LoRA Logs
+LORA_LOGS_DIR = os.path.join(os.path.dirname(__file__), "logs", "lora_training")

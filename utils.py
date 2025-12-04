@@ -127,7 +127,7 @@ def extract_xml_features(xml_dir, feat_dir=None, global_flag=True):
     change_directory('preprocessing/abc')
 
     # Step 3: Convert XML files to interleaved ABC format
-    run_command(f'python batch_xml2abc.py "{xml_dir}" ../../temp/std_abc')
+    run_command(f'python xml2abcwinfo.py "{xml_dir}" ../../temp/std_abc')
     run_command(f'python batch_interleaved_abc.py ../../temp/std_abc ../../temp/int_abc')
 
     # Step 4: Change directory back to the code folder
