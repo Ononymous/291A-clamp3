@@ -24,6 +24,18 @@ def parse_args():
         action="store_true",
         help="Enable M3 compatibility (remove metadata like text, copyright, lyrics, etc.)"
     )
+    parser.add_argument(
+        "--max_messages",
+        type=int,
+        default=None,
+        help="Maximum number of MIDI messages to include (truncate longer files)"
+    )
+    parser.add_argument(
+        "--max_ticks",
+        type=int,
+        default=None,
+        help="Maximum number of ticks (truncate by time)"
+    )
     return parser.parse_args()
 
 def msg_to_str(msg):
@@ -32,26 +44,49 @@ def msg_to_str(msg):
         str_msg += " " + str(value)
     return str_msg.strip().encode('unicode_escape').decode('utf-8')
 
-def load_midi(filename, m3_compatible):
+def load_midi(filename, m3_compatible, max_messages=None, max_ticks=None):
     """
     Load a MIDI file and convert it to MTF format.
+    
+    Args:
+        filename: Path to MIDI file
+        m3_compatible: Remove metadata for M3 compatibility
+        max_messages: Maximum number of messages to include (None = no limit)
+        max_ticks: Maximum tick time to include (None = no limit)
     """
     mid = mido.MidiFile(filename)
     msg_list = ["ticks_per_beat " + str(mid.ticks_per_beat)]
 
+    current_tick = 0
+    message_count = 0
+    
     # Traverse the MIDI file
     for msg in mid.merged_track:
+        # Track cumulative time
+        if hasattr(msg, 'time'):
+            current_tick += msg.time
+        
+        # Check tick limit
+        if max_ticks is not None and current_tick > max_ticks:
+            break
+        
+        # Check message limit
+        if max_messages is not None and message_count >= max_messages:
+            break
+        
         if m3_compatible:
             if msg.is_meta:
                 if msg.type in ["text", "copyright", "track_name", "instrument_name", 
                                 "lyrics", "marker", "cue_marker", "device_name"]:
                     continue
+        
         str_msg = msg_to_str(msg)
         msg_list.append(str_msg)
+        message_count += 1
     
     return "\n".join(msg_list)
 
-def convert_midi2mtf(file_list, input_dir, output_dir, m3_compatible):
+def convert_midi2mtf(file_list, input_dir, output_dir, m3_compatible, max_messages=None, max_ticks=None):
     """
     Converts MIDI files to MTF format.
     """
@@ -62,7 +97,7 @@ def convert_midi2mtf(file_list, input_dir, output_dir, m3_compatible):
         os.makedirs(output_folder, exist_ok=True)
 
         try:
-            output = load_midi(file, m3_compatible)
+            output = load_midi(file, m3_compatible, max_messages, max_ticks)
 
             if not output:
                 with open('logs/midi2mtf_error_log.txt', 'a', encoding='utf-8') as f:
@@ -83,6 +118,8 @@ if __name__ == '__main__':
     input_dir = os.path.abspath(args.input_dir)  # Ensure absolute path
     output_dir = os.path.abspath(args.output_dir)  # Ensure absolute path
     m3_compatible = args.m3_compatible  # Get M3 compatibility flag
+    max_messages = args.max_messages  # Get max messages limit
+    max_ticks = args.max_ticks  # Get max ticks limit
 
     file_list = []
     os.makedirs("logs", exist_ok=True)
@@ -107,5 +144,5 @@ if __name__ == '__main__':
     pool = Pool(processes=os.cpu_count())
     pool.starmap(
         convert_midi2mtf, 
-        [(file_list_chunk, input_dir, output_dir, m3_compatible) for file_list_chunk in file_lists]
+        [(file_list_chunk, input_dir, output_dir, m3_compatible, max_messages, max_ticks) for file_list_chunk in file_lists]
     )
