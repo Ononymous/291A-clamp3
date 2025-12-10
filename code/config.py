@@ -82,16 +82,17 @@ CLAMP3_LOGS_PATH = CLAMP3_WEIGHTS_PATH.replace("weights", "logs").replace("pth",
 
 # -------------------- Configuration for LoRA Adapter Training ----------------
 # LoRA Hyperparameters (recommended settings for transformers)
-LORA_R = 8                    # LoRA rank (low-rank dimension)
-LORA_ALPHA = 16               # LoRA alpha scaling factor (typically 2 * rank)
+LORA_R = 4                    # LoRA rank (REDUCED for faster training)
+LORA_ALPHA = 8                # LoRA alpha scaling factor (typically 2 * rank)
 LORA_DROPOUT = 0.1            # LoRA dropout for regularization
 LORA_TARGET_MODULES = ["query", "key", "value"]  # Attention projection layers in BertModel
 
-# LoRA Training Configuration
-LORA_LEARNING_RATE = 1e-4     # Higher learning rate for adapter-only training
-LORA_NUM_EPOCHS = 10          # Number of epochs per adapter
-LORA_BATCH_SIZE = 32          # Batch size per GPU (reduced to avoid OOM)
-LORA_EVAL_SPLIT = 0.01        # 1% of data for validation
+# LoRA Training Configuration - LIMITED (1 hour training)
+LORA_LEARNING_RATE = 2e-3     # 0.002 - High learning rate for faster convergence
+LORA_NUM_EPOCHS = 5           # 5 epochs with aggressive LR
+LORA_BATCH_SIZE = 32          # Batch size per GPU (keep at 32 to avoid OOM)
+LORA_TRAIN_SAMPLES = 12000    # ~12K samples for 1 hour training (375 batches/epoch × 5 epochs)
+LORA_EVAL_SAMPLES = 500       # 500 eval samples for faster validation
 
 # LoRA Adapter Paths
 LORA_ABC_ADAPTER_PATH = os.path.join(os.path.dirname(__file__), "adapters", "lora_abc_adapter")
@@ -99,8 +100,16 @@ LORA_MTF_ADAPTER_PATH = os.path.join(os.path.dirname(__file__), "adapters", "lor
 
 # LoRA Training Data Paths (relative to repository root)
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+# ABC (sheet music) - DISABLED, keeping WikiMT for testing only
 LORA_ABC_TRAIN_JSONL = os.path.join(REPO_ROOT, "data", "training", "clamp3_train_abc.jsonl")
-LORA_MTF_TRAIN_JSONL = os.path.join(REPO_ROOT, "data", "training", "clamp3_train_mtf.jsonl")
+# MTF (MIDI) - Using MidiCaps splits
+LORA_MTF_TRAIN_JSONL = os.path.join(REPO_ROOT, "data", "midicaps_splits", "midicaps_train.jsonl")
+LORA_MTF_VAL_JSONL = os.path.join(REPO_ROOT, "data", "midicaps_splits", "midicaps_val.jsonl")
+LORA_MTF_TEST_JSONL = os.path.join(REPO_ROOT, "data", "midicaps_splits", "midicaps_test.jsonl")
+
+# Training Mode: Set to False to skip ABC training (sheet music)
+TRAIN_ABC_ADAPTER = False  # Disable ABC training, focus on MidiCaps only
+TRAIN_MTF_ADAPTER = True   # Enable MTF training for MidiCaps
 
 # LoRA Logs
 LORA_LOGS_DIR = os.path.join(os.path.dirname(__file__), "logs", "lora_training")

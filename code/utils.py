@@ -640,12 +640,10 @@ class CLaMP3ModelWithLoRA(nn.Module):
             print("Warning: No LoRA adapter to save")
     
     def set_trainable(self, freeze_list):
-        """Set trainable parameters - delegates to base model."""
-        self.base_model.set_trainable(freeze_list)
-        
-        # If LoRA is enabled, ensure base model is frozen and only adapters train
+        """Set trainable parameters - LoRA mode freezes everything except LoRA adapters."""
+        # If LoRA is enabled, freeze ALL base model parameters and only train LoRA
         if self.lora_enabled:
-            # Freeze all base parameters
+            # Freeze all base parameters first
             for param in self.base_model.parameters():
                 param.requires_grad = False
             
@@ -655,6 +653,9 @@ class CLaMP3ModelWithLoRA(nn.Module):
                     param.requires_grad = True
             
             print("LoRA mode: Base model frozen, LoRA adapters trainable")
+        else:
+            # No LoRA - use normal freeze behavior
+            self.base_model.set_trainable(freeze_list)
 
 
 def split_data(data, eval_split=EVAL_SPLIT):

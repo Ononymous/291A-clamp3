@@ -28,13 +28,15 @@ START_EPOCH = 1           # Epoch to start from (1-indexed)
 # ======================================================================
 
 
-def list_files_in_json(json_path):
+def list_files_in_json(json_path, max_samples=None):
     """Load JSONL training data."""
     file_list = []
     
     if os.path.exists(json_path):
         with open(json_path, 'r', encoding='utf-8') as f:
-            for line in f:
+            for i, line in enumerate(f):
+                if max_samples and i >= max_samples:
+                    break
                 item = json.loads(line)
                 file_list.append(item)
 
@@ -60,7 +62,8 @@ class TextMusicDataset(Dataset):
         self.items = items
         self.mode = mode
         self.file_format = file_format  # 'abc' or 'mtf'
-        self.datapath = os.path.dirname(LORA_ABC_TRAIN_JSONL if file_format == 'abc' else LORA_MTF_TRAIN_JSONL)
+        # Fix: Go up one more level to get to 'data' folder, not 'data/training'
+        self.datapath = os.path.dirname(os.path.dirname(LORA_ABC_TRAIN_JSONL if file_format == 'abc' else LORA_MTF_TRAIN_JSONL))
         self.datapath = os.path.abspath(self.datapath)
 
     def text_dropout(self, item):
@@ -116,10 +119,15 @@ class TextMusicDataset(Dataset):
     def __getitem__(self, idx):
         item = self.items[idx]
 
-        # Get text
-        if self.mode == 'train' and TEXT_DROPOUT:
+        # Get text - handle both PDMX format (analysis/translations) and MidiCaps format (description)
+        if "description" in item:
+            # MidiCaps format
+            text = item["description"]
+        elif self.mode == 'train' and TEXT_DROPOUT:
+            # PDMX format with text dropout
             text = self.text_dropout(item)
         else:
+            # PDMX format without text dropout
             text = item.get("analysis", "music")
 
         # Tokenize text
@@ -129,21 +137,37 @@ class TextMusicDataset(Dataset):
             text_inputs = self.random_truncate(text_inputs, MAX_TEXT_LENGTH)
         text_masks = torch.ones(text_inputs.size(0))
 
-        # Load music file
-        if self.mode == 'train':
-            filepath = random.choice(item["filepaths"])
+        # Load music file - handle both formats
+        if "music" in item:
+            # MidiCaps format: single music file path
+            filepath = item["music"]
+        elif "filepaths" in item:
+            # PDMX format: list of file paths
+            if self.mode == 'train':
+                filepath = random.choice(item["filepaths"])
+            else:
+                filepath = item["filepaths"][0]
         else:
-            filepath = item["filepaths"][0]
+            # Fallback
+            filepath = ""
         
-        # Construct full path
-        filepath = os.path.join(self.datapath, filepath)
+        # Construct full path (MidiCaps paths are already relative to repo root)
+        if "midicaps" in filepath.lower():
+            # MidiCaps path is already correct relative to repo root
+            filepath = os.path.join(os.path.dirname(self.datapath), filepath)
+        else:
+            # PDMX path needs datapath prefix
+            filepath = os.path.join(self.datapath, filepath)
+        
         filepath = os.path.abspath(filepath)
 
         try:
             with open(filepath, "r", encoding="utf-8") as f:
                 music_content = f.read()
-        except:
+        except Exception as e:
             # Fallback to empty content if file not found
+            if random.random() < 0.01: # Print occasionally to avoid spam
+                print(f"Warning: Could not read file {filepath}: {e}")
             music_content = ""
 
         # Remove instrument info
@@ -210,7 +234,7 @@ def train_epoch(epoch, adapter_name):
     iter_idx = 1
     model.train()
     train_steps = (epoch-1)*len(train_set)
-    checkpoint_interval = max(1, len(train_set) // 10)  # Save 10 times per epoch
+    checkpoint_interval = max(1, len(train_set) // 5)  # Save 5 times per epoch (every 20%)
 
     for batch_idx, batch in enumerate(tqdm_train_set):
         try:
@@ -307,7 +331,7 @@ def save_checkpoint(checkpoint_path, epoch, loss, adapter_name):
     print(f"\nCheckpoint saved: {checkpoint_path}")
 
 
-def train_adapter(adapter_name, train_jsonl_path, adapter_save_path, resume_checkpoint=None):
+def train_adapter(adapter_name, train_jsonl_path, adapter_save_path, val_jsonl_path=None, resume_checkpoint=None):
     """
     Train a single LoRA adapter.
     
@@ -315,6 +339,7 @@ def train_adapter(adapter_name, train_jsonl_path, adapter_save_path, resume_chec
         adapter_name: Name of the adapter (e.g., "ABC" or "MTF")
         train_jsonl_path: Path to training data JSONL
         adapter_save_path: Path to save the best adapter
+        val_jsonl_path: Path to validation data JSONL (optional, will split from train if not provided)
         resume_checkpoint: Path to checkpoint file to resume from (optional)
     """
     global train_set, eval_set, optimizer, lr_scheduler, scaler
@@ -330,20 +355,28 @@ def train_adapter(adapter_name, train_jsonl_path, adapter_save_path, resume_chec
     
     # Load training data
     print(f"Loading data from {train_jsonl_path}")
-    train_files = list_files_in_json(train_jsonl_path)
+    train_files = list_files_in_json(train_jsonl_path, max_samples=LORA_TRAIN_SAMPLES)
     
     if not train_files:
         print(f"ERROR: No training data found in {train_jsonl_path}")
         return False
     
-    # Split into train/eval
-    train_files, eval_files = split_data(train_files, LORA_EVAL_SPLIT)
+    # Load or split validation data
+    if val_jsonl_path and os.path.exists(val_jsonl_path):
+        print(f"Loading validation data from {val_jsonl_path}")
+        eval_files = list_files_in_json(val_jsonl_path, max_samples=LORA_EVAL_SAMPLES)
+    else:
+        # Split into train/eval if no separate validation file
+        train_files, eval_files = split_data(train_files, 0.01)
     
     train_batch_nums = int(len(train_files) / LORA_BATCH_SIZE)
     eval_batch_nums = int(len(eval_files) / LORA_BATCH_SIZE)
 
-    train_files = train_files[:train_batch_nums*LORA_BATCH_SIZE]
-    eval_files = eval_files[:eval_batch_nums*LORA_BATCH_SIZE]
+    if train_batch_nums > 0:
+        train_files = train_files[:train_batch_nums*LORA_BATCH_SIZE]
+    
+    if eval_batch_nums > 0:
+        eval_files = eval_files[:eval_batch_nums*LORA_BATCH_SIZE]
 
     # Create datasets
     file_format = 'abc' if 'abc' in adapter_name.lower() else 'mtf'
@@ -356,17 +389,13 @@ def train_adapter(adapter_name, train_jsonl_path, adapter_save_path, resume_chec
     train_set = DataLoader(train_dataset, batch_size=LORA_BATCH_SIZE, collate_fn=collate_batch, sampler=train_sampler, shuffle=(train_sampler is None))
     eval_set = DataLoader(eval_dataset, batch_size=LORA_BATCH_SIZE, collate_fn=collate_batch, sampler=eval_sampler, shuffle=(train_sampler is None))
 
-    # Reset optimizer and scheduler for this adapter
-    optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=LORA_LEARNING_RATE)
-    lr_scheduler = get_constant_schedule_with_warmup(optimizer=optimizer, num_warmup_steps=1000)
-    scaler = GradScaler()
-
-    # Resume from checkpoint if specified
+    # Initialize training components
     start_epoch = 1
     best_epoch = 0
     min_eval_loss = float('inf')
     training_history = []
     
+    # Check if resuming from checkpoint
     if resume_checkpoint and os.path.exists(resume_checkpoint):
         print(f"\n{'='*80}")
         print("RESUMING FROM CHECKPOINT")
@@ -385,8 +414,19 @@ def train_adapter(adapter_name, train_jsonl_path, adapter_save_path, resume_chec
                 else:
                     model.load_adapter(adapter_path)
                 print("✓ Adapter weights loaded")
+                
+                # CRITICAL: Re-enable gradients for LoRA parameters after loading
+                for name, param in model.named_parameters():
+                    if 'lora_' in name:
+                        param.requires_grad = True
+                print("✓ LoRA gradients re-enabled")
             else:
                 print(f"⚠ Warning: Adapter path not found: {adapter_path}")
+            
+            # Reinitialize optimizer/scheduler with the loaded model
+            optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=LORA_LEARNING_RATE)
+            lr_scheduler = get_constant_schedule_with_warmup(optimizer=optimizer, num_warmup_steps=1000)
+            scaler = GradScaler()
             
             # Load optimizer state
             if 'optimizer_state' in checkpoint:
@@ -398,10 +438,9 @@ def train_adapter(adapter_name, train_jsonl_path, adapter_save_path, resume_chec
                 lr_scheduler.load_state_dict(checkpoint['scheduler_state'])
                 print("✓ Scheduler state loaded")
             
-            # Load scaler state
-            if 'scaler_state' in checkpoint:
-                scaler.load_state_dict(checkpoint['scaler_state'])
-                print("✓ Scaler state loaded")
+            # Load scaler state (but don't load it - causes issues)
+            # Scaler will start fresh to avoid state mismatch
+            print("✓ Scaler reinitialized (fresh state)")
             
             # Set start epoch
             if 'epoch' in checkpoint:
@@ -431,6 +470,15 @@ def train_adapter(adapter_name, train_jsonl_path, adapter_save_path, resume_chec
             best_epoch = 0
             min_eval_loss = float('inf')
             training_history = []
+            # Initialize fresh training components
+            optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=LORA_LEARNING_RATE)
+            lr_scheduler = get_constant_schedule_with_warmup(optimizer=optimizer, num_warmup_steps=1000)
+            scaler = GradScaler()
+    else:
+        # No checkpoint - initialize fresh training components
+        optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=LORA_LEARNING_RATE)
+        lr_scheduler = get_constant_schedule_with_warmup(optimizer=optimizer, num_warmup_steps=1000)
+        scaler = GradScaler()
     
     # Training loop
     print(f"\nStarting training from epoch {start_epoch} to {LORA_NUM_EPOCHS}...")
@@ -522,11 +570,13 @@ def train_adapter(adapter_name, train_jsonl_path, adapter_save_path, resume_chec
                 with open(history_path, 'w') as f:
                     json.dump(training_history, f, indent=2)
 
+            # Clear CUDA cache between epochs to reduce memory fragmentation
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+            
             if world_size > 1:
                 dist.barrier()
-            
-            # Clear CUDA cache between epochs
-            torch.cuda.empty_cache()
     
     except KeyboardInterrupt:
         print("\n" + "!"*80)
@@ -672,75 +722,91 @@ if __name__ == "__main__":
     if world_size > 1:
         model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
 
-    # Train ABC adapter
-    print("\n" + "="*80)
-    print("STAGE 1/2: Training ABC Adapter")
-    print("="*80)
-    stage1_start = time.time()
+    total_start_time = time.time()
     
-    # Check if resume checkpoint is specified in config (for ABC)
-    abc_resume_checkpoint = RESUME_CHECKPOINT if RESUME_CHECKPOINT and 'ABC' in str(RESUME_CHECKPOINT) else None
-    
-    try:
-        success = train_adapter("ABC", LORA_ABC_TRAIN_JSONL, LORA_ABC_ADAPTER_PATH, resume_checkpoint=abc_resume_checkpoint)
-        stage1_time = time.time() - stage1_start
+    # Train ABC adapter (OPTIONAL - controlled by config)
+    if TRAIN_ABC_ADAPTER:
+        print("\n" + "="*80)
+        print("STAGE 1/2: Training ABC Adapter")
+        print("="*80)
+        stage1_start = time.time()
         
-        if not success:
-            print("\n⚠ ABC adapter training failed!")
-        else:
-            print(f"\n✓ ABC adapter training completed successfully in {stage1_time/60:.1f} minutes!")
-    except Exception as e:
-        print(f"\n✗ ABC adapter training crashed: {e}")
-        print("Check emergency checkpoint in logs directory")
-        raise
-    
-    # Clear memory before Stage 2
-    torch.cuda.empty_cache()
-    
-    # Reload base model for MTF adapter training
-    print("\nReloading base model for MTF adapter...")
-    base_model = CLaMP3Model(audio_config=audio_config,
-                            symbolic_config=symbolic_config,
-                            global_rank=global_rank,
-                            world_size=world_size,
-                            text_model_name=TEXT_MODEL_NAME,
-                            hidden_size=CLAMP3_HIDDEN_SIZE,
-                            load_m3=CLAMP3_LOAD_M3)
-    
-    if os.path.exists(CLAMP3_WEIGHTS_PATH):
-        checkpoint = torch.load(CLAMP3_WEIGHTS_PATH, map_location='cpu', weights_only=True)
-        base_model.load_state_dict(checkpoint['model'])
-    
-    model = CLaMP3ModelWithLoRA(base_model, lora_config)
-    model = model.to(device)
-    model.set_trainable(freeze_list)
-    
-    if world_size > 1:
-        model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
-    
-    # Train MTF adapter
-    print("\n" + "="*80)
-    print("STAGE 2/2: Training MTF Adapter")
-    print("="*80)
-    stage2_start = time.time()
-    
-    # Check if resume checkpoint is specified in config (for MTF)
-    mtf_resume_checkpoint = RESUME_CHECKPOINT if RESUME_CHECKPOINT and 'MTF' in str(RESUME_CHECKPOINT) else None
-    
-    try:
-        success = train_adapter("MTF", LORA_MTF_TRAIN_JSONL, LORA_MTF_ADAPTER_PATH, resume_checkpoint=mtf_resume_checkpoint)
-        stage2_time = time.time() - stage2_start
+        # Check if resume checkpoint is specified in config (for ABC)
+        abc_resume_checkpoint = RESUME_CHECKPOINT if RESUME_CHECKPOINT and 'ABC' in str(RESUME_CHECKPOINT) else None
         
-        if not success:
-            print("\n⚠ MTF adapter training failed!")
-        else:
-            print(f"\n✓ MTF adapter training completed successfully in {stage2_time/60:.1f} minutes!")
-    except Exception as e:
-        print(f"\n✗ MTF adapter training crashed: {e}")
-        print("Check emergency checkpoint in logs directory")
-        raise
+        try:
+            success = train_adapter("ABC", LORA_ABC_TRAIN_JSONL, LORA_ABC_ADAPTER_PATH, resume_checkpoint=abc_resume_checkpoint)
+            stage1_time = time.time() - stage1_start
+            
+            if not success:
+                print("\n⚠ ABC adapter training failed!")
+            else:
+                print(f"\n✓ ABC adapter training completed successfully in {stage1_time/60:.1f} minutes!")
+        except Exception as e:
+            print(f"\n✗ ABC adapter training crashed: {e}")
+            print("Check emergency checkpoint in logs directory")
+            raise
+        
+        # Clear memory before Stage 2
+        torch.cuda.empty_cache()
+        
+        # Reload base model for MTF adapter training
+        print("\nReloading base model for MTF adapter...")
+        base_model = CLaMP3Model(audio_config=audio_config,
+                                symbolic_config=symbolic_config,
+                                global_rank=global_rank,
+                                world_size=world_size,
+                                text_model_name=TEXT_MODEL_NAME,
+                                hidden_size=CLAMP3_HIDDEN_SIZE,
+                                load_m3=CLAMP3_LOAD_M3)
+        
+        if os.path.exists(CLAMP3_WEIGHTS_PATH):
+            checkpoint = torch.load(CLAMP3_WEIGHTS_PATH, map_location='cpu', weights_only=True)
+            base_model.load_state_dict(checkpoint['model'])
+        
+        model = CLaMP3ModelWithLoRA(base_model, lora_config)
+        model = model.to(device)
+        model.set_trainable(freeze_list)
+        
+        if world_size > 1:
+            model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
+    else:
+        print("\n" + "="*80)
+        print("SKIPPING ABC ADAPTER TRAINING (TRAIN_ABC_ADAPTER=False)")
+        print("="*80)
     
-    total_time = time.time() - stage1_start
+    # Train MTF adapter (OPTIONAL - controlled by config)
+    if TRAIN_MTF_ADAPTER:
+        print("\n" + "="*80)
+        stage_num = "1/1" if not TRAIN_ABC_ADAPTER else "2/2"
+        print(f"STAGE {stage_num}: Training MTF Adapter (MidiCaps)")
+        print("="*80)
+        stage2_start = time.time()
+        
+        # Check if resume checkpoint is specified in config (for MTF)
+        mtf_resume_checkpoint = RESUME_CHECKPOINT if RESUME_CHECKPOINT and 'MTF' in str(RESUME_CHECKPOINT) else None
+        
+        try:
+            success = train_adapter("MTF", LORA_MTF_TRAIN_JSONL, LORA_MTF_ADAPTER_PATH, 
+                                  val_jsonl_path=LORA_MTF_VAL_JSONL, 
+                                  resume_checkpoint=mtf_resume_checkpoint)
+            stage2_time = time.time() - stage2_start
+            
+            if not success:
+                print("\n⚠ MTF adapter training failed!")
+            else:
+                print(f"\n✓ MTF adapter training completed successfully in {stage2_time/60:.1f} minutes!")
+        except Exception as e:
+            print(f"\n✗ MTF adapter training crashed: {e}")
+            print("Check emergency checkpoint in logs directory")
+            raise
+    else:
+        print("\n" + "="*80)
+        print("SKIPPING MTF ADAPTER TRAINING (TRAIN_MTF_ADAPTER=False)")
+        print("="*80)
+        stage2_start = time.time()  # For total time calculation
+    
+    total_time = time.time() - total_start_time
     
     print("\n" + "="*80)
     print("✓ LoRA ADAPTER TRAINING COMPLETE")
