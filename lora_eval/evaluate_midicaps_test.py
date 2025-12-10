@@ -253,20 +253,30 @@ def main():
     
     # Compare results
     print(f"\n{'='*80}")
-    print("COMPARISON")
+    print("COMPARISON SUMMARY")
     print(f"{'='*80}")
+    print("\nMIDICAPS")
+    print("-" * 80)
     
-    for direction in ['text_to_music', 'music_to_text']:
-        direction_name = "Text-to-Music" if direction == "text_to_music" else "Music-to-Text"
-        print(f"\n{direction_name}:")
-        for metric in ['MRR', 'Hit@1', 'Hit@5', 'Hit@10']:
-            baseline_val = baseline_results[direction][metric]
-            lora_val = lora_results[direction][metric]
-            diff = lora_val - baseline_val
-            pct = (diff / baseline_val * 100) if baseline_val > 0 else 0
-            
-            sign = "+" if diff > 0 else ""
-            print(f"  {metric:6s}: {baseline_val:7.4f} → {lora_val:7.4f}  ({sign}{diff:+7.4f}, {sign}{pct:+6.2f}%)")
+    # Text-to-Music table
+    print("\nText-to-Music Retrieval:")
+    print(f"{'Metric':<10} {'Baseline':<15} {'LoRA':<15} {'Change':<15} {'%Change':<10}")
+    for metric in ['MRR', 'Hit@1', 'Hit@5', 'Hit@10']:
+        baseline_val = baseline_results['text_to_music'][metric]
+        lora_val = lora_results['text_to_music'][metric]
+        diff = lora_val - baseline_val
+        pct = (diff / baseline_val * 100) if baseline_val > 0 else 0
+        print(f"{metric:<10} {baseline_val:<15.4f} {lora_val:<15.4f} {diff:<+15.4f} {pct:>8.2f}%")
+    
+    # Music-to-Text table
+    print("\nMusic-to-Text Retrieval:")
+    print(f"{'Metric':<10} {'Baseline':<15} {'LoRA':<15} {'Change':<15} {'%Change':<10}")
+    for metric in ['MRR', 'Hit@1', 'Hit@5', 'Hit@10']:
+        baseline_val = baseline_results['music_to_text'][metric]
+        lora_val = lora_results['music_to_text'][metric]
+        diff = lora_val - baseline_val
+        pct = (diff / baseline_val * 100) if baseline_val > 0 else 0
+        print(f"{metric:<10} {baseline_val:<15.4f} {lora_val:<15.4f} {diff:<+15.4f} {pct:>8.2f}%")
     
     # Save results
     output = {
