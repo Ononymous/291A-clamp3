@@ -38,7 +38,8 @@ def prepare_wikimt_abc(num_samples=100):
     print("PREPARING WikiMT-X ABC DATASET")
     print("="*80)
     
-    base_dir = Path('/Users/kaitlynt/291A-clamp3')
+    # Get project root (go up one level from lora_eval)
+    base_dir = Path(__file__).parent.parent
     jsonl_file = base_dir / 'data/test/wikimt-x/wikimt-x-public.jsonl'
     output_abc_dir = base_dir / 'data/test/wikimt_abc'
     
@@ -153,7 +154,8 @@ def prepare_lakh_mtf(midi_base_dir, num_samples=100):
     print("PREPARING LAKH MTF DATASET")
     print("="*80)
     
-    base_dir = Path('/Users/kaitlynt/291A-clamp3')
+    # Get project root (go up one level from lora_eval)
+    base_dir = Path(__file__).parent.parent
     midi_dir = Path(midi_base_dir)
     output_dir = base_dir / 'data/test/lakh_mtf'
     temp_midi_dir = base_dir / 'data/test/temp_midi_subset'
@@ -337,11 +339,13 @@ def main():
             print(f"\n✗ ABC preparation failed: {e}")
             import traceback
             traceback.print_exc()
-            abc_dir = Path('/Users/kaitlynt/291A-clamp3/data/test/wikimt_abc')
+            base_dir = Path(__file__).parent.parent
+            abc_dir = base_dir / 'data/test/wikimt_abc'
             abc_dir, abc_count = create_minimal_abc_dataset(abc_dir)
     else:
         print("\n⊗ Skipping ABC dataset preparation")
-        abc_dir = Path('/Users/kaitlynt/291A-clamp3/data/test/wikimt_abc')
+        base_dir = Path(__file__).parent.parent
+        abc_dir = base_dir / 'data/test/wikimt_abc'
     
     # Prepare MTF dataset from Lakh MIDI
     if not args.skip_mtf:
@@ -354,11 +358,13 @@ def main():
             print(f"\n✗ MTF preparation failed: {e}")
             import traceback
             traceback.print_exc()
-            mtf_dir = Path('/Users/kaitlynt/291A-clamp3/data/test/lakh_mtf')
+            base_dir = Path(__file__).parent.parent
+            mtf_dir = base_dir / 'data/test/lakh_mtf'
             mtf_dir, mtf_count = create_minimal_mtf_dataset(mtf_dir)
     else:
         print("\n⊗ Skipping MTF dataset preparation")
-        mtf_dir = Path('/Users/kaitlynt/291A-clamp3/data/test/lakh_mtf')
+        base_dir = Path(__file__).parent.parent
+        mtf_dir = base_dir / 'data/test/lakh_mtf'
     
     # Summary
     print("\n" + "="*80)

@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-LoRA Adapter Evaluation Script
-Evaluates the LoRA-adapted CLaMP3 model on WikiMT (ABC) and Lakh (MTF) datasets.
+Baseline Model Evaluation Script
+Evaluates the original CLaMP3 model (without LoRA adapters) on WikiMT (ABC) and Lakh (MTF) datasets.
 
 This script:
-1. Loads the base model with specialized LoRA adapters
-2. Extracts features using adapter-enhanced model
-3. Computes retrieval metrics
-4. Compares performance with baseline model
+1. Extracts features from the baseline model
+2. Computes retrieval metrics (MRR, Hit@1, Hit@10, Hit@100)
+3. Compares text-to-music and music-to-music retrieval performance
 """
 
 import os
@@ -19,31 +18,28 @@ from pathlib import Path
 from tqdm import tqdm
 from datetime import datetime
 
-# Add code directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
+# Add code directory to path (go up one level to project root)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'code'))
 
 from config import *
 from utils import *
 from transformers import BertConfig, AutoTokenizer, GPT2Config
-from peft import PeftModel, PeftConfig
 
 
-class LoRAModelEvaluator:
-    """Evaluates the CLaMP3 model with LoRA adapters."""
+class BaselineModelEvaluator:
+    """Evaluates the baseline CLaMP3 model without LoRA adapters."""
     
     def __init__(self):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.tokenizer = None
-        self.base_model = None
-        self.abc_model = None
-        self.mtf_model = None
+        self.model = None
         self.patchilizer = None
         self.results = {}
         
     def setup(self):
-        """Initialize base model and LoRA adapters."""
+        """Initialize model and utilities."""
         print("\n" + "="*80)
-        print("LoRA ADAPTER EVALUATION - SETUP")
+        print("BASELINE MODEL EVALUATION - SETUP")
         print("="*80)
         
         try:
@@ -70,58 +66,21 @@ class LoRAModelEvaluator:
             )
             
             # Load base CLaMP3 model
-            self.base_model = CLaMP3Model(
+            self.model = CLaMP3Model(
                 audio_config=audio_config,
                 symbolic_config=symbolic_config,
                 text_model_name=TEXT_MODEL_NAME,
                 hidden_size=CLAMP3_HIDDEN_SIZE,
                 load_m3=CLAMP3_LOAD_M3
             )
-            self.base_model = self.base_model.to(self.device)
+            self.model = self.model.to(self.device)
+            self.model.eval()
             print(f"✓ Loaded base CLaMP3 model")
-            print(f"  - Total parameters: {sum(p.numel() for p in self.base_model.parameters()):,}")
-            
-            # Load LoRA adapters
-            if os.path.exists(LORA_ABC_ADAPTER_PATH):
-                print(f"\nLoading ABC LoRA adapter from: {LORA_ABC_ADAPTER_PATH}")
-                try:
-                    self.abc_model = PeftModel.from_pretrained(
-                        self.base_model,
-                        LORA_ABC_ADAPTER_PATH,
-                        device_map=self.device
-                    )
-                    self.abc_model.eval()
-                    print(f"✓ ABC LoRA adapter loaded successfully")
-                except Exception as e:
-                    print(f"⚠ Failed to load ABC LoRA adapter: {e}")
-                    self.abc_model = None
-            else:
-                print(f"⚠ ABC LoRA adapter not found at: {LORA_ABC_ADAPTER_PATH}")
-                self.abc_model = None
-            
-            if os.path.exists(LORA_MTF_ADAPTER_PATH):
-                print(f"\nLoading MTF LoRA adapter from: {LORA_MTF_ADAPTER_PATH}")
-                try:
-                    self.mtf_model = PeftModel.from_pretrained(
-                        self.base_model,
-                        LORA_MTF_ADAPTER_PATH,
-                        device_map=self.device
-                    )
-                    self.mtf_model.eval()
-                    print(f"✓ MTF LoRA adapter loaded successfully")
-                except Exception as e:
-                    print(f"⚠ Failed to load MTF LoRA adapter: {e}")
-                    self.mtf_model = None
-            else:
-                print(f"⚠ MTF LoRA adapter not found at: {LORA_MTF_ADAPTER_PATH}")
-                self.mtf_model = None
+            print(f"  - Total parameters: {sum(p.numel() for p in self.model.parameters()):,}")
             
             # Load patchilizer
             self.patchilizer = M3Patchilizer()
             print(f"✓ Loaded M3 Patchilizer")
-            
-            if not self.abc_model and not self.mtf_model:
-                print(f"\n⚠ WARNING: No LoRA adapters loaded. Using base model only.")
             
             print(f"\n✓ Device: {self.device}")
             return True
@@ -133,16 +92,14 @@ class LoRAModelEvaluator:
             return False
     
     def extract_abc_features(self, abc_content):
-        """Extract features from ABC notation using ABC adapter."""
+        """Extract features from ABC notation."""
         try:
-            model = self.abc_model if self.abc_model else self.base_model
-            
             encoded = self.patchilizer.encode(abc_content, add_special_patches=True)
             encoded_tensor = torch.tensor(encoded).to(self.device)
             masks = torch.ones(encoded_tensor.size(0)).to(self.device)
             
             with torch.no_grad():
-                features = model.get_symbolic_features(
+                features = self.model.get_symbolic_features(
                     symbolic_inputs=encoded_tensor.unsqueeze(0),
                     symbolic_masks=masks.unsqueeze(0),
                     get_global=True
@@ -154,16 +111,14 @@ class LoRAModelEvaluator:
             return None
     
     def extract_mtf_features(self, mtf_content):
-        """Extract features from MTF format using MTF adapter."""
+        """Extract features from MTF format."""
         try:
-            model = self.mtf_model if self.mtf_model else self.base_model
-            
             encoded = self.patchilizer.encode(mtf_content, add_special_patches=True)
             encoded_tensor = torch.tensor(encoded).to(self.device)
             masks = torch.ones(encoded_tensor.size(0)).to(self.device)
             
             with torch.no_grad():
-                features = model.get_symbolic_features(
+                features = self.model.get_symbolic_features(
                     symbolic_inputs=encoded_tensor.unsqueeze(0),
                     symbolic_masks=masks.unsqueeze(0),
                     get_global=True
@@ -182,7 +137,7 @@ class LoRAModelEvaluator:
             masks = torch.ones(text_ids.size(0)).to(self.device)
             
             with torch.no_grad():
-                features = self.base_model.get_text_features(
+                features = self.model.get_text_features(
                     text_inputs=text_ids.unsqueeze(0),
                     text_masks=masks.unsqueeze(0),
                     get_global=True
@@ -195,21 +150,20 @@ class LoRAModelEvaluator:
     
     def evaluate_dataset(self, dataset_dir, data_type='abc'):
         """
-        Evaluate a dataset with LoRA adapter.
+        Evaluate a dataset.
         
         Args:
             dataset_dir: Directory containing music files and metadata
             data_type: 'abc' or 'mtf'
         """
         print(f"\n{'='*80}")
-        print(f"EVALUATING {data_type.upper()} DATASET WITH LoRA: {dataset_dir}")
+        print(f"EVALUATING {data_type.upper()} DATASET: {dataset_dir}")
         print(f"{'='*80}")
         
         results = {
             'dataset_type': data_type,
             'dataset_path': dataset_dir,
             'timestamp': datetime.now().isoformat(),
-            'adapter_used': 'abc_adapter' if data_type == 'abc' else 'mtf_adapter',
             'metrics': {},
             'samples': []
         }
@@ -224,14 +178,10 @@ class LoRAModelEvaluator:
             music_files = list(Path(dataset_dir).glob('*.abc'))
             file_extension = '.abc'
             feature_fn = self.extract_abc_features
-            adapter_status = "loaded" if self.abc_model else "not found"
-            print(f"Using ABC LoRA adapter: {adapter_status}")
         elif data_type == 'mtf':
             music_files = list(Path(dataset_dir).glob('*.mtf'))
             file_extension = '.mtf'
             feature_fn = self.extract_mtf_features
-            adapter_status = "loaded" if self.mtf_model else "not found"
-            print(f"Using MTF LoRA adapter: {adapter_status}")
         else:
             print(f"✗ Unknown data type: {data_type}")
             return results
@@ -246,7 +196,7 @@ class LoRAModelEvaluator:
         music_features = {}
         text_features = {}
         
-        for music_file in tqdm(music_files, desc=f"Extracting {data_type.upper()} features (LoRA)"):
+        for music_file in tqdm(music_files, desc=f"Extracting {data_type.upper()} features"):
             try:
                 with open(music_file, 'r', encoding='utf-8') as f:
                     content = f.read()
@@ -324,10 +274,10 @@ class LoRAModelEvaluator:
     def generate_report(self):
         """Generate evaluation report."""
         print("\n" + "="*80)
-        print("LoRA ADAPTER EVALUATION REPORT")
+        print("BASELINE MODEL EVALUATION REPORT")
         print("="*80)
         
-        report_path = os.path.join(os.path.dirname(__file__), 'evaluation_lora_report.json')
+        report_path = os.path.join(os.path.dirname(__file__), 'evaluation_baseline_report.json')
         
         with open(report_path, 'w') as f:
             json.dump(self.results, f, indent=2)
@@ -338,7 +288,6 @@ class LoRAModelEvaluator:
         for dataset_name, dataset_results in self.results.items():
             print(f"\n{dataset_name.upper()}:")
             print(f"  Dataset: {dataset_results.get('dataset_path', 'N/A')}")
-            print(f"  Adapter: {dataset_results.get('adapter_used', 'N/A')}")
             print(f"  Samples: {dataset_results['metrics'].get('num_samples', 0)}")
             if 'avg_feature_norm' in dataset_results['metrics']:
                 print(f"  Avg Feature Norm: {dataset_results['metrics']['avg_feature_norm']:.4f}")
@@ -349,11 +298,11 @@ class LoRAModelEvaluator:
 def main():
     """Main evaluation routine."""
     print("\n" + "#"*80)
-    print("# LoRA ADAPTER EVALUATION")
-    print("# CLaMP3 with specialized LoRA adapters")
+    print("# BASELINE MODEL EVALUATION")
+    print("# Original CLaMP3 (without LoRA adapters)")
     print("#"*80)
     
-    evaluator = LoRAModelEvaluator()
+    evaluator = BaselineModelEvaluator()
     
     # Setup
     if not evaluator.setup():
@@ -362,7 +311,7 @@ def main():
     
     # Evaluate ABC dataset (WikiMT)
     print("\n" + "#"*80)
-    print("# EVALUATING ABC DATASET (WikiMT) WITH ABC LoRA ADAPTER")
+    print("# EVALUATING ABC DATASET (WikiMT)")
     print("#"*80)
     
     abc_results = evaluator.evaluate_dataset(
@@ -373,7 +322,7 @@ def main():
     
     # Evaluate MTF dataset (Lakh)
     print("\n" + "#"*80)
-    print("# EVALUATING MTF DATASET (Lakh) WITH MTF LoRA ADAPTER")
+    print("# EVALUATING MTF DATASET (Lakh)")
     print("#"*80)
     
     mtf_results = evaluator.evaluate_dataset(
@@ -385,7 +334,7 @@ def main():
     # Generate report
     evaluator.generate_report()
     
-    print("\n✓ LoRA ADAPTER EVALUATION COMPLETE")
+    print("\n✓ BASELINE EVALUATION COMPLETE")
     return True
 
 

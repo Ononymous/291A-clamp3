@@ -174,6 +174,8 @@ START_EPOCH = 6
 Evaluate LoRA-adapted model against baseline using real datasets (WikiMT-X for ABC, Lakh MIDI for MTF):
 
 ```bash
+cd lora_eval
+
 # Prepare test datasets (100 ABC samples + 100 MTF samples)
 python prepare_test_data.py --num_abc 100 --num_mtf 100
 

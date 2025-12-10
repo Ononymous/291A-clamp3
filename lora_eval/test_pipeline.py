@@ -16,8 +16,8 @@ import tempfile
 import shutil
 from pathlib import Path
 
-# Add code directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
+# Add code directory to path (go up one level to project root)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'code'))
 
 from config import *
 from utils import *
