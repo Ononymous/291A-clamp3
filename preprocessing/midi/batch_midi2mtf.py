@@ -4,7 +4,7 @@ import mido
 import random
 import argparse
 from tqdm import tqdm
-from multiprocessing import Pool
+from multiprocessing import Pool, Manager, Lock
 
 # Parse command-line arguments
 def parse_args():
@@ -86,11 +86,11 @@ def load_midi(filename, m3_compatible, max_messages=None, max_ticks=None):
     
     return "\n".join(msg_list)
 
-def convert_midi2mtf(file_list, input_dir, output_dir, m3_compatible, max_messages=None, max_ticks=None):
+def convert_midi2mtf(file_list, input_dir, output_dir, m3_compatible, max_messages=None, max_ticks=None, progress_dict=None, lock=None, process_id=0):
     """
     Converts MIDI files to MTF format.
     """
-    for file in tqdm(file_list):
+    for file in file_list:
         # Construct the output directory by replacing input_dir with output_dir
         relative_path = os.path.relpath(os.path.dirname(file), input_dir)
         output_folder = os.path.join(output_dir, relative_path)
@@ -111,6 +111,11 @@ def convert_midi2mtf(file_list, input_dir, output_dir, m3_compatible, max_messag
             with open('logs/midi2mtf_error_log.txt', 'a', encoding='utf-8') as f:
                 f.write(file + " " + str(e) + '\n')
             pass
+        
+        # Update shared progress counter
+        if progress_dict is not None and lock is not None:
+            with lock:
+                progress_dict['count'] += 1
 
 if __name__ == '__main__':
     # Parse command-line arguments
@@ -124,6 +129,7 @@ if __name__ == '__main__':
     file_list = []
     os.makedirs("logs", exist_ok=True)
 
+    print("Scanning for MIDI files...")
     # Traverse the specified input folder for MIDI files
     for root, dirs, files in os.walk(input_dir):
         for file in files:
@@ -132,17 +138,52 @@ if __name__ == '__main__':
             filename = os.path.join(root, file).replace("\\", "/")
             file_list.append(filename)
 
+    print(f"Found {len(file_list)} MIDI files")
+    
     # Prepare for multiprocessing
+    num_processes = os.cpu_count()
+    print(f"Using {num_processes} CPU cores")
+    
     file_lists = []
     random.shuffle(file_list)
-    for i in range(os.cpu_count()):
-        start_idx = int(math.floor(i * len(file_list) / os.cpu_count()))
-        end_idx = int(math.floor((i + 1) * len(file_list) / os.cpu_count()))
+    for i in range(num_processes):
+        start_idx = int(math.floor(i * len(file_list) / num_processes))
+        end_idx = int(math.floor((i + 1) * len(file_list) / num_processes))
         file_lists.append(file_list[start_idx:end_idx])
 
+    # Create shared progress tracking
+    manager = Manager()
+    progress_dict = manager.dict()
+    progress_dict['count'] = 0
+    lock = manager.Lock()
+
     # Use multiprocessing to speed up conversion
-    pool = Pool(processes=os.cpu_count())
-    pool.starmap(
+    pool = Pool(processes=num_processes)
+    
+    # Start async conversion
+    result = pool.starmap_async(
         convert_midi2mtf, 
-        [(file_list_chunk, input_dir, output_dir, m3_compatible, max_messages, max_ticks) for file_list_chunk in file_lists]
+        [(file_list_chunk, input_dir, output_dir, m3_compatible, max_messages, max_ticks, progress_dict, lock, i) 
+         for i, file_list_chunk in enumerate(file_lists)]
     )
+    
+    # Monitor progress with a single progress bar
+    with tqdm(total=len(file_list), desc="Converting MIDI to MTF") as pbar:
+        last_count = 0
+        while not result.ready():
+            current_count = progress_dict['count']
+            if current_count > last_count:
+                pbar.update(current_count - last_count)
+                last_count = current_count
+            result.wait(0.1)
+        
+        # Final update
+        current_count = progress_dict['count']
+        if current_count > last_count:
+            pbar.update(current_count - last_count)
+    
+    pool.close()
+    pool.join()
+    
+    print(f"\nConversion complete! Processed {progress_dict['count']} files")
+
