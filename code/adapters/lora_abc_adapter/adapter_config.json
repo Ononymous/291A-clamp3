@@ -19,8 +19,8 @@
   "rank_pattern": {},
   "revision": null,
   "target_modules": [
-    "value",
     "query",
+    "value",
     "key"
   ],
   "task_type": "FEATURE_EXTRACTION"

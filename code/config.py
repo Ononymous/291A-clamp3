@@ -87,11 +87,11 @@ LORA_ALPHA = 8                # LoRA alpha scaling factor (typically 2 * rank)
 LORA_DROPOUT = 0.1            # LoRA dropout for regularization
 LORA_TARGET_MODULES = ["query", "key", "value"]  # Attention projection layers in BertModel
 
-# LoRA Training Configuration - LIMITED (1 hour training)
+# LoRA Training Configuration - 2 HOUR training per adapter
 LORA_LEARNING_RATE = 2e-3     # 0.002 - High learning rate for faster convergence
-LORA_NUM_EPOCHS = 5           # 5 epochs with aggressive LR
+LORA_NUM_EPOCHS = 20          # 20 epochs for ~2 hour training (6 min/epoch × 20 = 120 min)
 LORA_BATCH_SIZE = 32          # Batch size per GPU (keep at 32 to avoid OOM)
-LORA_TRAIN_SAMPLES = 12000    # ~12K samples for 1 hour training (375 batches/epoch × 5 epochs)
+LORA_TRAIN_SAMPLES = 12000    # ~12K samples (375 batches/epoch × 20 epochs)
 LORA_EVAL_SAMPLES = 500       # 500 eval samples for faster validation
 
 # LoRA Adapter Paths
