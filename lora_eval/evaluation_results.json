@@ -1,0 +1,149 @@
+{
+  "timestamp": "2025-12-10T18:18:34.887536",
+  "results": {
+    "wikimt_background": {
+      "baseline": {
+        "model": "Baseline",
+        "dataset": "wikimt",
+        "num_samples": 1000,
+        "text_to_music": {
+          "MRR": 0.15343987603838877,
+          "Hit@1": 9.1,
+          "Hit@5": 20.200000000000003,
+          "Hit@10": 26.8
+        },
+        "music_to_text": {
+          "MRR": 0.04289449112299639,
+          "Hit@1": 1.5,
+          "Hit@5": 4.8,
+          "Hit@10": 8.799999999999999
+        }
+      },
+      "lora": {
+        "model": "LoRA",
+        "dataset": "wikimt",
+        "num_samples": 1000,
+        "text_to_music": {
+          "MRR": 0.28288782685501096,
+          "Hit@1": 21.099999999999998,
+          "Hit@5": 34.9,
+          "Hit@10": 40.8
+        },
+        "music_to_text": {
+          "MRR": 0.06383236138199352,
+          "Hit@1": 2.5,
+          "Hit@5": 7.7,
+          "Hit@10": 13.0
+        }
+      }
+    },
+    "wikimt_analysis": {
+      "baseline": {
+        "model": "Baseline",
+        "dataset": "wikimt",
+        "num_samples": 1000,
+        "text_to_music": {
+          "MRR": 0.1398136130170864,
+          "Hit@1": 8.9,
+          "Hit@5": 17.9,
+          "Hit@10": 23.1
+        },
+        "music_to_text": {
+          "MRR": 0.0398745044675789,
+          "Hit@1": 1.4000000000000001,
+          "Hit@5": 4.8,
+          "Hit@10": 8.200000000000001
+        }
+      },
+      "lora": {
+        "model": "LoRA",
+        "dataset": "wikimt",
+        "num_samples": 1000,
+        "text_to_music": {
+          "MRR": 0.2306316634931431,
+          "Hit@1": 16.8,
+          "Hit@5": 27.400000000000002,
+          "Hit@10": 34.8
+        },
+        "music_to_text": {
+          "MRR": 0.055105332151268525,
+          "Hit@1": 2.0,
+          "Hit@5": 7.1,
+          "Hit@10": 11.5
+        }
+      }
+    },
+    "wikimt_description": {
+      "baseline": {
+        "model": "Baseline",
+        "dataset": "wikimt",
+        "num_samples": 1000,
+        "text_to_music": {
+          "MRR": 0.044761637702829656,
+          "Hit@1": 2.1,
+          "Hit@5": 4.9,
+          "Hit@10": 7.8
+        },
+        "music_to_text": {
+          "MRR": 0.0333381708037571,
+          "Hit@1": 1.0999999999999999,
+          "Hit@5": 3.9,
+          "Hit@10": 6.6000000000000005
+        }
+      },
+      "lora": {
+        "model": "LoRA",
+        "dataset": "wikimt",
+        "num_samples": 1000,
+        "text_to_music": {
+          "MRR": 0.0617992195257865,
+          "Hit@1": 2.8000000000000003,
+          "Hit@5": 7.3999999999999995,
+          "Hit@10": 11.799999999999999
+        },
+        "music_to_text": {
+          "MRR": 0.042485894381612814,
+          "Hit@1": 1.5,
+          "Hit@5": 4.6,
+          "Hit@10": 9.2
+        }
+      }
+    },
+    "wikimt_scene": {
+      "baseline": {
+        "model": "Baseline",
+        "dataset": "wikimt",
+        "num_samples": 1000,
+        "text_to_music": {
+          "MRR": 0.06793245436830994,
+          "Hit@1": 3.8,
+          "Hit@5": 8.1,
+          "Hit@10": 11.4
+        },
+        "music_to_text": {
+          "MRR": 0.024181714065842443,
+          "Hit@1": 0.5,
+          "Hit@5": 2.5,
+          "Hit@10": 5.2
+        }
+      },
+      "lora": {
+        "model": "LoRA",
+        "dataset": "wikimt",
+        "num_samples": 1000,
+        "text_to_music": {
+          "MRR": 0.10368833129205392,
+          "Hit@1": 6.1,
+          "Hit@5": 13.4,
+          "Hit@10": 17.9
+        },
+        "music_to_text": {
+          "MRR": 0.031917730895865,
+          "Hit@1": 0.8999999999999999,
+          "Hit@5": 3.8,
+          "Hit@10": 6.6000000000000005
+        }
+      }
+    }
+  }
+}

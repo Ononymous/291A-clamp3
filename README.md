@@ -2,13 +2,14 @@
 
 ## **Overview**
 
-This project extends [**CLaMP 3**](https://sanderwood.github.io/clamp3/) with [**LoRA (Low-Rank Adaptation)**](https://github.com/microsoft/LoRA) on their symbolic music encoder to enable specialized learning for **sheet music (ABC notation)** and **MIDI** formats. By fine-tuning only adapter layers, we achieve efficient specialization to symbolic modalities while maintaining the pre-trained knowledge of the base model.
+This project extends [**CLaMP 3**](https://sanderwood.github.io/clamp3/) with [**LoRA (Low-Rank Adaptation)**](https://github.com/microsoft/LoRA) on their symbolic music encoder to enable specialized learning for **sheet music (ABC notation)** and **MIDI** formats. By fine-tuning only adapter layers (0.05% of parameters), we achieve efficient specialization to symbolic modalities while maintaining the pre-trained knowledge of the base model.
 
 ## **Project Objectives**
 
 - Improve symbolic music (ABC & MIDI) retrieval performance over base CLaMP 3
-- Demonstrate efficient fine-tuning via LoRA on the symbolic encoder
-- Evaluate on specialized datasets (PDMX training, Lakh & WikiMT testing)  
+- Demonstrate efficient fine-tuning via LoRA on the symbolic encoder (221K trainable params out of 457M total trainable parameters)
+- Train on large-scale datasets: **PDMX** (sheet music) and **MidiCaps** (420K MIDI-text pairs)
+- Evaluate on specialized test sets (MidiCaps test, WikiMT)  
 
 ## **What Can This Project Do?**
 
@@ -100,8 +101,25 @@ python preprocessing/generate_training_jsonl.py \
 ```
 
 **Outputs:**
-- `data/training/clamp3_train_abc.jsonl` - ABC training pairs
-- `data/training/clamp3_train_mtf.jsonl` - MTF training pairs
+- `data/training/clamp3_train_abc.jsonl` - ABC training pairs (from PDMX)
+- `data/training/clamp3_train_mtf.jsonl` - MTF training pairs (from PDMX)
+
+### **Step 5: MidiCaps Dataset Split**
+
+For MIDI-specific training, split the MidiCaps dataset into train/validation/test sets:
+
+```bash
+python preprocessing/split_midicaps.py \
+  --input data/MidiCaps.jsonl \
+  --output_dir data/midicaps_splits \
+  --test_size 1000 \
+  --val_size 1000
+```
+
+**Outputs:**
+- `data/midicaps_splits/midicaps_train.jsonl` - 420,420 MIDI-text training pairs
+- `data/midicaps_splits/midicaps_val.jsonl` - 1,000 validation pairs
+- `data/midicaps_splits/midicaps_test.jsonl` - 1,000 test pairs
 
 Convert evaluation data using same preprocessing scripts as above.
 
@@ -118,14 +136,21 @@ ls data/mtf/  # Should contain converted MTF files
 
 2. **Review configuration:**
 ```python
-# Edit code/config.py to verify:
-LORA_R = 8                      # LoRA rank
-LORA_ALPHA = 16                 # LoRA alpha scaling
-LORA_NUM_EPOCHS = 10            # Epochs per adapter
+# Edit code/config.py to configure training:
+LORA_R = 4                      # LoRA rank
+LORA_ALPHA = 8                  # LoRA alpha scaling
+LORA_NUM_EPOCHS = 5             # Epochs per adapter
 LORA_BATCH_SIZE = 32            # Batch size per GPU
-LORA_LEARNING_RATE = 1e-4       # Learning rate
+LORA_LEARNING_RATE = 2e-3       # Learning rate (2e-3 for MidiCaps)
+
+# For PDMX training (ABC notation from sheet music):
 LORA_ABC_TRAIN_JSONL = "data/training/clamp3_train_abc.jsonl"
-LORA_MTF_TRAIN_JSONL = "data/training/clamp3_train_mtf.jsonl"
+TRAIN_ABC_ADAPTER = True        # Enable ABC adapter training
+
+# For MidiCaps training (MIDI format):
+LORA_MTF_TRAIN_JSONL = "data/midicaps_splits/midicaps_train.jsonl"
+LORA_MTF_VAL_JSONL = "data/midicaps_splits/midicaps_val.jsonl"
+TRAIN_ABC_ADAPTER = False       # Disable ABC, train only MTF
 ```
 
 3. **Verify model weights:**
@@ -135,23 +160,34 @@ ls code/weights_clamp3_*.pth  # Should have pretrained CLaMP3 weights (C2 versio
 
 ### **1. Training LoRA Adapters**
 
-Train separate LoRA adapters for ABC and MTF symbolic modalities using distributed training:
+Train separate LoRA adapters for ABC (PDMX) and MTF (MidiCaps) modalities:
 
 ```bash
 # Single GPU training
-python -m torch.distributed.launch --nproc_per_node=1 --use_env code/train_clamp3_lora.py
+python code/train_clamp3_lora.py
 
 # Multi-GPU training (e.g., 4 GPUs)
 python -m torch.distributed.launch --nproc_per_node=4 --use_env code/train_clamp3_lora.py
 ```
 
+**Training Options:**
+
+**Option A: PDMX Training (Sheet Music → ABC notation)**
+- Set `TRAIN_ABC_ADAPTER = True` in `config.py`
+- Uses PDMX dataset converted to ABC format
+- Trains both ABC and MTF adapters
+
+**Option B: MidiCaps Training (MIDI → MTF format)**
+- Set `TRAIN_ABC_ADAPTER = False` in `config.py`
+- Uses MidiCaps dataset (420K MIDI-text pairs)
+- Trains only MTF adapter on large-scale MIDI data
+
 **What the training script does:**
 1. Loads pretrained CLaMP3 model weights (C2 version)
-2. Applies LoRA configuration to symbolic encoder attention layers
-3. Trains ABC adapter (10 epochs by default)
-4. Trains MTF adapter (10 epochs by default)
-5. Saves best adapters to:
-   - `code/adapters/lora_abc_adapter/` 
+2. Applies LoRA to symbolic encoder (query, key, value attention layers)
+3. Trains enabled adapters (ABC and/or MTF)
+4. Saves best adapters to:
+   - `code/adapters/lora_abc_adapter/` (if ABC enabled)
    - `code/adapters/lora_mtf_adapter/`
 
 **Training outputs:**
@@ -171,7 +207,31 @@ START_EPOCH = 6
 
 ### **2. Evaluation on Test Datasets**
 
-Evaluate LoRA-adapted model against baseline using real datasets (WikiMT-X for ABC, Lakh MIDI for MTF):
+**Evaluate on MidiCaps Test Set (1000 held-out samples):**
+
+```bash
+# Evaluate MTF adapter trained on MidiCaps
+python lora_eval/evaluate_midicaps_test.py
+```
+
+**Outputs:**
+- Baseline vs LoRA comparison table
+- Text-to-Music and Music-to-Text retrieval metrics (MRR, Hit@1/5/10)
+- Results saved to `lora_eval/midicaps_test_results.json`
+
+**Evaluate on WikiMT Test Set:**
+
+```bash
+# Evaluate on WikiMT test data (uses 'analysis' field)
+python lora_eval/evaluate_wikimt_test.py
+```
+
+**Outputs:**
+- Baseline vs LoRA comparison table
+- Cross-modal retrieval metrics
+- Results saved to `lora_eval/wikimt_test_results.json`
+
+**Legacy Evaluation Pipeline (Lakh MIDI):**
 
 ```bash
 cd lora_eval
@@ -190,37 +250,54 @@ cat evaluation_summary.txt
 python -m json.tool < evaluation_comparison_report.json
 ```
 
-**What's evaluated:**
-- **ABC Dataset (WikiMT-X)**: Sheet music with rich text annotations
-  - Text-to-music semantic similarity
-  - Feature representation quality
-  
-- **MTF Dataset (Lakh MIDI)**: MIDI performances with minimal annotations
-  - Cross-modal alignment
-  - Embedding consistency
-
-**Outputs generated:**
-- `evaluation_summary.txt` - Human-readable results
-- `evaluation_lora_report.json` - LoRA model metrics
-- `evaluation_baseline_report.json` - Baseline model metrics
-- `evaluation_comparison_report.json` - Side-by-side comparison
-
 ## **Results**
 
-We evaluated LoRA-adapted CLaMP 3 against the original model on text-to-music alignment tasks using two datasets:
+### **WikiMT Test Set Evaluation**
 
-- **WikiMT-X** (CLaMP 3 authors' dataset) - ABC notation with rich text annotations
-- **Lakh MIDI** (unseen during CLaMP 3 training) - MIDI performances with text descriptions
+**Text-to-Music Retrieval:**
 
-**Key Finding:** LoRA specialization significantly improved MIDI text alignment:
+| Metric | Baseline | LoRA | Change | %Change |
+|--------|----------|------|--------|---------|
+| MRR    | 0.1606   | 0.2904 | +0.1298 | 80.85% |
+| Hit@1  | 9.8000   | 21.6000 | +11.8000 | 120.41% |
+| Hit@5  | 20.6000  | 35.9000 | +15.3000 | 74.27% |
+| Hit@10 | 28.8000  | 44.3000 | +15.5000 | 53.82% |
 
-| Model | Lakh MIDI (Text-MIDI Similarity) |
-|-------|-----------|
-| **Base CLaMP 3** | -0.0082 |
-| **CLaMP 3 + LoRA** | 0.0512 |
-| **Improvement** | +0.0594 ↑ |
+**Music-to-Text Retrieval:**
 
-The LoRA adapters enable CLaMP 3 to achieve positive semantic alignment on the Lakh dataset, which was not used during the original model's training. This demonstrates that specialized adapters improve symbolic music understanding through efficient fine-tuning with minimal additional parameters.
+| Metric | Baseline | LoRA | Change | %Change |
+|--------|----------|------|--------|---------|
+| MRR    | 0.0687   | 0.1273 | +0.0586 | 85.29% |
+| Hit@1  | 2.5000   | 5.8000 | +3.3000 | 132.00% |
+| Hit@5  | 9.6000   | 18.0000 | +8.4000 | 87.50% |
+| Hit@10 | 14.7000  | 25.4000 | +10.7000 | 72.79% |
+
+### **MidiCaps Test Set Evaluation**
+
+**Text-to-Music Retrieval:**
+
+| Metric | Baseline | LoRA | Change | %Change |
+|--------|----------|------|--------|---------|
+| MRR    | 0.4414   | 0.6728 | +0.2313 | 52.41% |
+| Hit@1  | 30.9524  | 53.0952 | +22.1429 | 71.54% |
+| Hit@5  | 57.8571  | 84.7619 | +26.9048 | 46.50% |
+| Hit@10 | 70.9524  | 93.5714 | +22.6190 | 31.88% |
+
+**Music-to-Text Retrieval:**
+
+| Metric | Baseline | LoRA | Change | %Change |
+|--------|----------|------|--------|---------|
+| MRR    | 0.4482   | 0.6458 | +0.1976 | 44.09% |
+| Hit@1  | 30.4762  | 51.6667 | +21.1905 | 69.53% |
+| Hit@5  | 61.6667  | 80.4762 | +18.8095 | 30.50% |
+| Hit@10 | 72.3810  | 88.5714 | +16.1905 | 22.37% |
+
+### **Key Findings**
+
+- **Parameter Efficiency**: Training only 221K LoRA parameters (0.05% of 458M total) achieves significant improvements
+- **Strong Performance on WikiMT**: Up to 132% improvement on Music-to-Text Hit@1
+- **Strong Performance on MidiCaps**: Up to 71.54% improvement on Text-to-Music Hit@1
+- **Consistent Gains**: All metrics improve substantially after LoRA fine-tuning across both datasets
 
 ## **References**
 

@@ -100,16 +100,16 @@ LORA_MTF_ADAPTER_PATH = os.path.join(os.path.dirname(__file__), "adapters", "lor
 
 # LoRA Training Data Paths (relative to repository root)
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
-# ABC (sheet music) - DISABLED, keeping WikiMT for testing only
+# ABC (sheet music) - PDMX dataset for sheet music training
 LORA_ABC_TRAIN_JSONL = os.path.join(REPO_ROOT, "data", "training", "clamp3_train_abc.jsonl")
-# MTF (MIDI) - Using MidiCaps splits
+# MTF (MIDI) - MidiCaps dataset for MIDI training
 LORA_MTF_TRAIN_JSONL = os.path.join(REPO_ROOT, "data", "midicaps_splits", "midicaps_train.jsonl")
 LORA_MTF_VAL_JSONL = os.path.join(REPO_ROOT, "data", "midicaps_splits", "midicaps_val.jsonl")
 LORA_MTF_TEST_JSONL = os.path.join(REPO_ROOT, "data", "midicaps_splits", "midicaps_test.jsonl")
 
-# Training Mode: Set to False to skip ABC training (sheet music)
-TRAIN_ABC_ADAPTER = False  # Disable ABC training, focus on MidiCaps only
-TRAIN_MTF_ADAPTER = True   # Enable MTF training for MidiCaps
+# Training Mode: Enable/disable adapter training
+TRAIN_ABC_ADAPTER = True   # Enable ABC training (PDMX sheet music)
+TRAIN_MTF_ADAPTER = True   # Enable MTF training (MidiCaps MIDI)
 
 # LoRA Logs
 LORA_LOGS_DIR = os.path.join(os.path.dirname(__file__), "logs", "lora_training")
