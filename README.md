@@ -252,52 +252,52 @@ python -m json.tool < evaluation_comparison_report.json
 
 ## **Results**
 
-### **WikiMT Test Set Evaluation**
+### **MidiCaps (MTF Adapter)**
 
-**Text-to-Music Retrieval:**
+**Text-to-Music:**
 
-| Metric | Baseline | LoRA | Change | %Change |
-|--------|----------|------|--------|---------|
-| MRR    | 0.1606   | 0.2904 | +0.1298 | 80.85% |
-| Hit@1  | 9.8000   | 21.6000 | +11.8000 | 120.41% |
-| Hit@5  | 20.6000  | 35.9000 | +15.3000 | 74.27% |
-| Hit@10 | 28.8000  | 44.3000 | +15.5000 | 53.82% |
+| Metric | Baseline | LoRA | %Change |
+|--------|----------|------|---------|
+| MRR    | 0.4414   | 0.6504 | +47.34% |
+| Hit@1  | 30.95    | 50.95 | +64.62% |
+| Hit@5  | 57.86    | 85.00 | +46.91% |
+| Hit@10 | 70.95    | 91.67 | +29.19% |
 
-**Music-to-Text Retrieval:**
+**Music-to-Text:**
 
-| Metric | Baseline | LoRA | Change | %Change |
-|--------|----------|------|--------|---------|
-| MRR    | 0.0687   | 0.1273 | +0.0586 | 85.29% |
-| Hit@1  | 2.5000   | 5.8000 | +3.3000 | 132.00% |
-| Hit@5  | 9.6000   | 18.0000 | +8.4000 | 87.50% |
-| Hit@10 | 14.7000  | 25.4000 | +10.7000 | 72.79% |
+| Metric | Baseline | LoRA | %Change |
+|--------|----------|------|---------|
+| MRR    | 0.4482   | 0.6285 | +40.21% |
+| Hit@1  | 30.48    | 49.05 | +60.94% |
+| Hit@5  | 61.67    | 80.24 | +30.12% |
+| Hit@10 | 72.38    | 88.81 | +22.70% |
 
-### **MidiCaps Test Set Evaluation**
+### **WikiMT-X (ABC Adapter) - Background Field**
 
-**Text-to-Music Retrieval:**
+**Text-to-Music:**
 
-| Metric | Baseline | LoRA | Change | %Change |
-|--------|----------|------|--------|---------|
-| MRR    | 0.4414   | 0.6728 | +0.2313 | 52.41% |
-| Hit@1  | 30.9524  | 53.0952 | +22.1429 | 71.54% |
-| Hit@5  | 57.8571  | 84.7619 | +26.9048 | 46.50% |
-| Hit@10 | 70.9524  | 93.5714 | +22.6190 | 31.88% |
+| Metric | Baseline | LoRA | %Change |
+|--------|----------|------|---------|
+| MRR    | 0.1534   | 0.1788 | +16.50% |
+| Hit@1  | 9.10     | 11.90 | +30.77% |
+| Hit@5  | 20.20    | 22.20 | +9.90% |
+| Hit@10 | 26.80    | 29.90 | +11.57% |
 
-**Music-to-Text Retrieval:**
+**Music-to-Text:**
 
-| Metric | Baseline | LoRA | Change | %Change |
-|--------|----------|------|--------|---------|
-| MRR    | 0.4482   | 0.6458 | +0.1976 | 44.09% |
-| Hit@1  | 30.4762  | 51.6667 | +21.1905 | 69.53% |
-| Hit@5  | 61.6667  | 80.4762 | +18.8095 | 30.50% |
-| Hit@10 | 72.3810  | 88.5714 | +16.1905 | 22.37% |
+| Metric | Baseline | LoRA | %Change |
+|--------|----------|------|---------|
+| MRR    | 0.0429   | 0.0683 | +59.34% |
+| Hit@1  | 1.50     | 2.60  | +73.33% |
+| Hit@5  | 4.80     | 9.00  | +87.50% |
+| Hit@10 | 8.80     | 15.00 | +70.45% |
 
 ### **Key Findings**
 
-- **Parameter Efficiency**: Training only 221K LoRA parameters (0.05% of 458M total) achieves significant improvements
-- **Strong Performance on WikiMT**: Up to 132% improvement on Music-to-Text Hit@1
-- **Strong Performance on MidiCaps**: Up to 71.54% improvement on Text-to-Music Hit@1
-- **Consistent Gains**: All metrics improve substantially after LoRA fine-tuning across both datasets
+- **Parameter Efficiency**: 221K trainable parameters (0.05% of 458M total)
+- **MTF Adapter**: Strong improvements on MidiCaps (+47% MRR, +65% Hit@1)
+- **ABC Adapter**: Consistent gains on WikiMT-X across all text fields
+- **No Degradation**: All metrics improved after LoRA fine-tuning
 
 ## **References**
 
