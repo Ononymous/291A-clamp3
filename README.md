@@ -13,8 +13,6 @@ This project extends [**CLaMP 3**](https://sanderwood.github.io/clamp3/) with [*
 
 ## **What Can This Project Do?**
 
-<!-- TODO: Fill in specific capabilities and applications -->
-
  **Cross-Modal Music Retrieval**: All the original functionalities of CLaMP 3  
  **Efficient Fine-Tuning**: Adapt base CLaMP 3 with minimal parameters using LoRA  
  **Specialized Evaluation**: Performance metrics on publically-available symbolic music datasets
@@ -207,48 +205,43 @@ START_EPOCH = 6
 
 ### **2. Evaluation on Test Datasets**
 
-**Evaluate on MidiCaps Test Set (1000 held-out samples):**
+**Evaluate both MidiCaps and WikiMT-X (default):**
 
 ```bash
-# Evaluate MTF adapter trained on MidiCaps
-python lora_eval/evaluate_midicaps_test.py
+python lora_eval/evaluate_adapters.py
+```
+
+**Evaluate only MidiCaps Test Set (1000 held-out samples):**
+
+```bash
+python lora_eval/evaluate_adapters.py --eval_midicaps
+```
+
+**Evaluate only WikiMT-X Test Set:**
+
+```bash
+# Default: uses 'analysis' field
+python lora_eval/evaluate_adapters.py --eval_wikimt
+
+# Evaluate specific text field (background, description, or scene)
+python lora_eval/evaluate_adapters.py --eval_wikimt --wikimt_text_field background
+
+# Evaluate ALL text fields
+python lora_eval/evaluate_adapters.py --eval_wikimt --wikimt_text_field all
+```
+
+**Use custom adapter paths:**
+
+```bash
+python lora_eval/evaluate_adapters.py \
+  --midicaps_adapter path/to/mtf_adapter \
+  --wikimt_adapter path/to/abc_adapter
 ```
 
 **Outputs:**
-- Baseline vs LoRA comparison table
+- Baseline vs LoRA comparison tables
 - Text-to-Music and Music-to-Text retrieval metrics (MRR, Hit@1/5/10)
-- Results saved to `lora_eval/midicaps_test_results.json`
-
-**Evaluate on WikiMT Test Set:**
-
-```bash
-# Evaluate on WikiMT test data (uses 'analysis' field)
-python lora_eval/evaluate_wikimt_test.py
-```
-
-**Outputs:**
-- Baseline vs LoRA comparison table
-- Cross-modal retrieval metrics
-- Results saved to `lora_eval/wikimt_test_results.json`
-
-**Legacy Evaluation Pipeline (Lakh MIDI):**
-
-```bash
-cd lora_eval
-
-# Prepare test datasets (100 ABC samples + 100 MTF samples)
-python prepare_test_data.py --num_abc 100 --num_mtf 100
-
-# Run complete evaluation pipeline
-python test_pipeline.py
-python evaluate_baseline.py
-python evaluate_lora.py
-python compare_results.py
-
-# View results
-cat evaluation_summary.txt
-python -m json.tool < evaluation_comparison_report.json
-```
+- Results saved to `lora_eval/evaluation_results.json`
 
 ## **Results**
 
@@ -302,9 +295,3 @@ python -m json.tool < evaluation_comparison_report.json
 ## **References**
 
 For complete bibliography including all dependencies, see `REFERENCES.bib`
-
-### **Key References**
-- **CLaMP 3 and WikiMT Benchmark**: [Wu et al., 2025](https://arxiv.org/abs/2502.10362)
-- **PDMX Dataset**: [Long et al., 2025](https://arxiv.org/abs/2502.10362)
-- **LoRA**: [Hu et al., 2022](https://openreview.net/forum?id=nZeVKeeFYf9)
-- **Lakh MIDI Dataset**
