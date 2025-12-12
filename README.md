@@ -1,5 +1,7 @@
 # **CLaMP 3 with LoRA: Specialized Symbolic Music Encoder**
 
+By Gen Tamada and Kaitlyn Tom
+
 ## **Overview**
 
 This project extends [**CLaMP 3**](https://sanderwood.github.io/clamp3/) with [**LoRA (Low-Rank Adaptation)**](https://github.com/microsoft/LoRA) on their symbolic music encoder to enable specialized learning for **sheet music (ABC notation)** and **MIDI** formats. By fine-tuning only adapter layers (0.05% of parameters), we achieve efficient specialization to symbolic modalities while maintaining the pre-trained knowledge of the base model.
